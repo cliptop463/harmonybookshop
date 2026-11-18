@@ -1,0 +1,6 @@
+{
+  "name": "Harmony Bookshop Management",
+  "description": "Offline product price lookup, stock management, and profit margin tracker for sales teams.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
