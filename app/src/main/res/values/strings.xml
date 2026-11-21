@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">Harmony Bookshop Management</string>
-    <string name="search_placeholder">Search products or SKU codes…</string>
+    <string name="search_placeholder">Search products or categories…</string>
     <string name="clear_search_cd">Clear search</string>
     <string name="settings_cd">Settings</string>
     <string name="add_product_cd">Add product</string>
@@ -8,6 +8,6 @@
     <string name="empty_catalog_subtitle">Add products with cost and selling prices to track stock levels and live profit margins offline.</string>
     <string name="add_first_item">Add first item</string>
     <string name="no_search_results_title">No matching products</string>
-    <string name="no_search_results_subtitle">Try another product name or SKU code.</string>
+    <string name="no_search_results_subtitle">Try another product name or category.</string>
     <string name="clear_search_button">Clear search</string>
 </resources>

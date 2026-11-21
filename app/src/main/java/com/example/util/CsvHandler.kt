@@ -1,6 +1,7 @@
 package com.example.util
 
 import com.example.data.Product
+import com.example.data.ProductCategory
 
 data class CsvSkippedRow(
     val rowNumber: Int,
@@ -20,14 +21,14 @@ data class CsvImportResult(
  */
 object CsvHandler {
 
-    private const val HEADER = "name,skuOrCode,quantity,costPrice,sellingPrice"
+    private const val HEADER = "name,category,quantity,costPrice,sellingPrice"
 
     fun exportToCsv(products: List<Product>): String {
         val sb = StringBuilder()
         sb.append(HEADER).append('\n')
         products.forEach { product ->
             sb.append(escapeField(product.name)).append(',')
-            sb.append(escapeField(product.skuOrCode.orEmpty())).append(',')
+            sb.append(escapeField(product.category.displayName)).append(',')
             sb.append(product.quantity).append(',')
             sb.append(CurrencyFormatter.formatEditableNumber(product.costPrice)).append(',')
             sb.append(CurrencyFormatter.formatEditableNumber(product.sellingPrice)).append('\n')
@@ -45,6 +46,7 @@ object CsvHandler {
         val skippedRows = mutableListOf<CsvSkippedRow>()
 
         val startIndex = if (isHeaderRow(records.first())) 1 else 0
+        val now = System.currentTimeMillis()
 
         for (index in startIndex until records.size) {
             val rowNumber = index + 1
@@ -54,7 +56,7 @@ object CsvHandler {
             if (columns.size < 5) {
                 skippedRows += CsvSkippedRow(
                     rowNumber = rowNumber,
-                    reason = "Expected 5 columns (name, skuOrCode, quantity, costPrice, sellingPrice)",
+                    reason = "Expected 5 columns (name, category, quantity, costPrice, sellingPrice)",
                 )
                 continue
             }
@@ -65,7 +67,7 @@ object CsvHandler {
                 continue
             }
 
-            val skuOrCode = columns[1].trim().ifEmpty { null }
+            val category = ProductCategory.fromRaw(columns[1])
 
             val quantity = columns[2].trim().toIntOrNull()
             if (quantity == null || quantity < 0) {
@@ -87,10 +89,12 @@ object CsvHandler {
 
             validProducts += Product(
                 name = name,
-                skuOrCode = skuOrCode,
+                category = category,
                 quantity = quantity,
                 costPrice = costPrice,
                 sellingPrice = sellingPrice,
+                createdAt = now + index,
+                updatedAt = now + index,
             )
         }
 
@@ -115,7 +119,6 @@ object CsvHandler {
     }
 
     private fun parseRecords(input: String): List<List<String>> {
-        // Strip UTF-8 BOM if present
         val text = input.removePrefix("\uFEFF")
         val records = mutableListOf<List<String>>()
         val currentRow = mutableListOf<String>()

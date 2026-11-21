@@ -14,26 +14,28 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ProductDao {
 
-    @Query("SELECT * FROM products ORDER BY name COLLATE NOCASE ASC")
+    @Query("SELECT * FROM products ORDER BY updatedAt DESC, id DESC")
     fun observeAllProducts(): Flow<List<Product>>
 
     /**
-     * Real-time LIKE query matching product name or optional SKU/code.
-     * Uses IFNULL so products without a code still match when query is blank.
+     * Real-time LIKE query matching product name or category display text.
      */
     @Query(
         """
         SELECT * FROM products
         WHERE :query = ''
            OR name LIKE '%' || :query || '%'
-           OR IFNULL(skuOrCode, '') LIKE '%' || :query || '%'
-        ORDER BY name COLLATE NOCASE ASC
+           OR REPLACE(category, '_', ' ') LIKE '%' || :query || '%'
+        ORDER BY updatedAt DESC, id DESC
         """
     )
     fun searchProducts(query: String): Flow<List<Product>>
 
-    @Query("SELECT * FROM products ORDER BY name COLLATE NOCASE ASC")
+    @Query("SELECT * FROM products ORDER BY updatedAt DESC, id DESC")
     suspend fun getAllProductsOnce(): List<Product>
+
+    @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
+    suspend fun getProductById(id: Long): Product?
 
     @Query("SELECT COUNT(*) FROM products")
     suspend fun getProductCount(): Int
@@ -48,10 +50,15 @@ interface ProductDao {
     suspend fun updateProduct(product: Product)
 
     /**
-     * Atomically adjusts stock quantity while clamping at 0 so rapid taps never yield negative stock.
+     * Atomically adjusts stock quantity while clamping at 0 and refreshes [updatedAt]
+     * so modified items reflect the latest change timestamp.
      */
-    @Query("UPDATE products SET quantity = MAX(0, quantity + :delta) WHERE id = :productId")
-    suspend fun adjustQuantity(productId: Long, delta: Int)
+    @Query("UPDATE products SET quantity = MAX(0, quantity + :delta), updatedAt = :updatedAt WHERE id = :productId")
+    suspend fun adjustQuantity(
+        productId: Long,
+        delta: Int,
+        updatedAt: Long = System.currentTimeMillis(),
+    )
 
     @Delete
     suspend fun deleteProduct(product: Product)

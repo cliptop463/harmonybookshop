@@ -1,15 +1,23 @@
 package com.example.viewmodel
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppSettings
 import com.example.data.Product
+import com.example.data.ProductCategory
 import com.example.repository.ProductRepository
 import com.example.repository.SettingsRepository
 import com.example.util.CurrencyFormatter
 import com.example.util.CsvHandler
+import com.example.util.PdfReceiptGenerator
+import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,11 +39,14 @@ class InventoryViewModel(
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
+    private val activeTab = MutableStateFlow(AppTab.CATALOG)
     private val searchQuery = MutableStateFlow("")
-    private val sortOrder = MutableStateFlow(SortOrder.NAME)
+    private val sortOrder = MutableStateFlow(SortOrder.LAST_MODIFIED)
     private val formState = MutableStateFlow<ProductFormState?>(null)
+    private val orderState = MutableStateFlow(OrderFormState())
     private val isSettingsOpen = MutableStateFlow(false)
     private val importReport = MutableStateFlow<ImportReportState?>(null)
+    private val nextOrderLineId = AtomicLong(1L)
 
     private val _snackbarEvents = MutableSharedFlow<InventorySnackbarEvent>(extraBufferCapacity = 4)
     val snackbarEvents: SharedFlow<InventorySnackbarEvent> = _snackbarEvents.asSharedFlow()
@@ -53,6 +64,12 @@ class InventoryViewModel(
         settingsRepository.settings,
     ) { filtered, allProducts, query, sort, settings ->
         val sortedItems = when (sort) {
+            SortOrder.LAST_MODIFIED -> filtered.sortedWith(
+                compareByDescending<Product> { it.updatedAt }.thenByDescending { it.id }
+            )
+            SortOrder.LAST_ADDED -> filtered.sortedWith(
+                compareByDescending<Product> { it.createdAt }.thenByDescending { it.id }
+            )
             SortOrder.NAME -> filtered.sortedBy { it.name.lowercase() }
             SortOrder.LOW_STOCK -> filtered.sortedWith(
                 compareBy<Product> { it.quantity }.thenBy { it.name.lowercase() }
@@ -78,6 +95,7 @@ class InventoryViewModel(
                 items = sortedItems,
                 totalCatalogCount = allProducts.size,
             ),
+            allCatalogProducts = allProducts,
             summary = summary,
             searchQuery = query,
             sortOrder = sort,
@@ -85,16 +103,26 @@ class InventoryViewModel(
         )
     }
 
-    val uiState: StateFlow<InventoryUiState> = combine(
-        baseDataFlow,
+    private val modalAndTabFlow = combine(
+        activeTab,
         formState,
+        orderState,
         isSettingsOpen,
         importReport,
-    ) { base, form, settingsOpen, report ->
+    ) { tab, form, order, settingsOpen, report ->
+        ModalAndTabHolder(tab, form, order, settingsOpen, report)
+    }
+
+    val uiState: StateFlow<InventoryUiState> = combine(
+        baseDataFlow,
+        modalAndTabFlow,
+    ) { base, holder ->
         base.copy(
-            formState = form,
-            isSettingsOpen = settingsOpen,
-            importReport = report,
+            activeTab = holder.tab,
+            formState = holder.form,
+            orderState = holder.order,
+            isSettingsOpen = holder.settingsOpen,
+            importReport = holder.report,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -106,6 +134,10 @@ class InventoryViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             productRepository.seedInitialProductsIfNeeded()
         }
+    }
+
+    fun onTabSelected(tab: AppTab) {
+        activeTab.value = tab
     }
 
     fun onSearchQueryChange(newQuery: String) {
@@ -147,14 +179,14 @@ class InventoryViewModel(
     }
 
     fun onOpenAddSheet() {
-        formState.value = ProductFormState()
+        formState.value = ProductFormState(category = ProductCategory.DEFAULT)
     }
 
     fun onOpenEditSheet(product: Product) {
         formState.value = ProductFormState(
             editingProductId = product.id,
             name = product.name,
-            skuOrCode = product.skuOrCode.orEmpty(),
+            category = product.category,
             quantityText = product.quantity.toString(),
             costPriceText = CurrencyFormatter.formatEditableNumber(product.costPrice),
             sellingPriceText = CurrencyFormatter.formatEditableNumber(product.sellingPrice),
@@ -174,9 +206,9 @@ class InventoryViewModel(
         }
     }
 
-    fun onFormCodeChange(value: String) {
+    fun onFormCategoryChange(category: ProductCategory) {
         formState.update { current ->
-            current?.copy(skuOrCode = value)
+            current?.copy(category = category)
         }
     }
 
@@ -229,7 +261,7 @@ class InventoryViewModel(
         val product = Product(
             id = current.editingProductId ?: 0L,
             name = trimmedName,
-            skuOrCode = current.skuOrCode.trim().ifEmpty { null },
+            category = current.category,
             quantity = current.quantityText.trim().toInt(),
             costPrice = current.costPriceText.trim().toDouble(),
             sellingPrice = current.sellingPriceText.trim().toDouble(),
@@ -242,6 +274,280 @@ class InventoryViewModel(
             _snackbarEvents.emit(InventorySnackbarEvent.Message("$action \"${product.name}\""))
         }
     }
+
+    // --- Customer Order & PDF Receipt Operations ---
+
+    fun onOrderCustomerNameChange(value: String) {
+        orderState.update { current ->
+            current.copy(
+                customerName = value,
+                customerNameError = if (value.isBlank()) "Customer name is required for receipt" else null,
+            )
+        }
+    }
+
+    fun onOrderCustomerAddressChange(value: String) {
+        orderState.update { it.copy(customerAddress = value) }
+    }
+
+    fun onOrderDateChange(value: String) {
+        orderState.update { it.copy(orderDate = value) }
+    }
+
+    fun onOpenCatalogPicker() {
+        orderState.update { it.copy(isCatalogPickerOpen = true) }
+    }
+
+    fun onDismissCatalogPicker() {
+        orderState.update { it.copy(isCatalogPickerOpen = false) }
+    }
+
+    fun onOpenCustomItemDialog() {
+        orderState.update { it.copy(isCustomItemDialogOpen = true) }
+    }
+
+    fun onDismissCustomItemDialog() {
+        orderState.update { it.copy(isCustomItemDialogOpen = false) }
+    }
+
+    fun onAddProductToOrder(product: Product, closePicker: Boolean = false) {
+        orderState.update { current ->
+            val existingIndex = current.items.indexOfFirst { it.productId == product.id }
+            val updatedItems = if (existingIndex >= 0) {
+                current.items.mapIndexed { idx, item ->
+                    if (idx == existingIndex) {
+                        item.copy(quantity = item.quantity + 1)
+                    } else {
+                        item
+                    }
+                }
+            } else {
+                current.items + OrderLineItem(
+                    lineId = nextOrderLineId.getAndIncrement(),
+                    productId = product.id,
+                    name = product.name,
+                    category = product.category,
+                    quantity = 1,
+                    unitPriceXaf = product.sellingPrice,
+                    maxAvailableStock = product.quantity,
+                )
+            }
+            current.copy(
+                items = updatedItems,
+                itemsError = null,
+                isCatalogPickerOpen = if (closePicker) false else current.isCatalogPickerOpen,
+            )
+        }
+        viewModelScope.launch {
+            _snackbarEvents.emit(InventorySnackbarEvent.Message("Added \"${product.name}\" to order"))
+        }
+    }
+
+    fun onAddCustomItemToOrder(
+        name: String,
+        category: ProductCategory,
+        quantity: Int,
+        unitPriceXaf: Double,
+    ) {
+        orderState.update { current ->
+            current.copy(
+                items = current.items + OrderLineItem(
+                    lineId = nextOrderLineId.getAndIncrement(),
+                    productId = null,
+                    name = name.trim(),
+                    category = category,
+                    quantity = quantity.coerceAtLeast(1),
+                    unitPriceXaf = unitPriceXaf.coerceAtLeast(0.0),
+                ),
+                itemsError = null,
+                isCustomItemDialogOpen = false,
+            )
+        }
+    }
+
+    fun onIncrementOrderItemQty(lineId: Long) {
+        orderState.update { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.lineId == lineId) item.copy(quantity = item.quantity + 1) else item
+                }
+            )
+        }
+    }
+
+    fun onDecrementOrderItemQty(lineId: Long) {
+        orderState.update { current ->
+            val updated = current.items.mapNotNull { item ->
+                if (item.lineId == lineId) {
+                    if (item.quantity <= 1) null else item.copy(quantity = item.quantity - 1)
+                } else {
+                    item
+                }
+            }
+            current.copy(items = updated)
+        }
+    }
+
+    fun onRemoveOrderItem(lineId: Long) {
+        orderState.update { current ->
+            current.copy(items = current.items.filterNot { it.lineId == lineId })
+        }
+    }
+
+    fun onUpdateOrderItemPrice(lineId: Long, newPriceXaf: Double) {
+        orderState.update { current ->
+            current.copy(
+                items = current.items.map { item ->
+                    if (item.lineId == lineId) {
+                        item.copy(unitPriceXaf = newPriceXaf.coerceAtLeast(0.0))
+                    } else {
+                        item
+                    }
+                }
+            )
+        }
+    }
+
+    fun onAddDealerStroke(stroke: SignatureStroke) {
+        orderState.update { current ->
+            current.copy(dealerStrokes = current.dealerStrokes + stroke)
+        }
+    }
+
+    fun onClearDealerSignature() {
+        orderState.update { it.copy(dealerStrokes = emptyList()) }
+    }
+
+    fun onAddCustomerStroke(stroke: SignatureStroke) {
+        orderState.update { current ->
+            current.copy(customerStrokes = current.customerStrokes + stroke)
+        }
+    }
+
+    fun onClearCustomerSignature() {
+        orderState.update { it.copy(customerStrokes = emptyList()) }
+    }
+
+    fun onToggleDeductStock(deduct: Boolean) {
+        orderState.update { it.copy(deductStockOnGenerate = deduct) }
+    }
+
+    fun onClearOrder() {
+        orderState.value = OrderFormState()
+    }
+
+    fun validateOrderForReceipt(): Boolean {
+        val current = orderState.value
+        val nameError = if (current.customerName.isBlank()) {
+            "Customer name is required for receipt"
+        } else {
+            null
+        }
+        val itemsError = if (current.items.isEmpty()) {
+            "Add at least one item to generate a receipt"
+        } else {
+            null
+        }
+        if (nameError != null || itemsError != null) {
+            orderState.update {
+                it.copy(
+                    customerNameError = nameError,
+                    itemsError = itemsError,
+                )
+            }
+            return false
+        }
+        return true
+    }
+
+    fun onSaveOrderPdf(contentResolver: ContentResolver, uri: Uri) {
+        val snapshot = orderState.value
+        if (!validateOrderForReceipt()) return
+        val decimals = uiState.value.settings.decimalPlaces
+
+        orderState.update { it.copy(isGeneratingPdf = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    PdfReceiptGenerator.generateReceipt(snapshot, decimals, out)
+                } ?: error("Unable to open destination PDF file")
+
+                if (snapshot.deductStockOnGenerate) {
+                    deductOrderStock(snapshot)
+                }
+            }.onSuccess {
+                withContext(Dispatchers.Main) {
+                    orderState.update { it.copy(isGeneratingPdf = false) }
+                }
+                _snackbarEvents.emit(
+                    InventorySnackbarEvent.Message("PDF receipt saved for ${snapshot.customerName.trim()}")
+                )
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    orderState.update { it.copy(isGeneratingPdf = false) }
+                }
+                _snackbarEvents.emit(
+                    InventorySnackbarEvent.Message("PDF save failed: ${error.localizedMessage ?: "Unknown error"}")
+                )
+            }
+        }
+    }
+
+    fun onGenerateShareablePdf(
+        context: Context,
+        onUriReady: (Uri) -> Unit,
+    ) {
+        val snapshot = orderState.value
+        if (!validateOrderForReceipt()) return
+        val decimals = uiState.value.settings.decimalPlaces
+
+        orderState.update { it.copy(isGeneratingPdf = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val receiptsDir = File(context.cacheDir, "receipts").apply { mkdirs() }
+                val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                val safeCustomer = snapshot.customerName.trim()
+                    .replace(Regex("[^A-Za-z0-9_-]"), "_")
+                    .take(24)
+                    .ifEmpty { "customer" }
+                val pdfFile = File(receiptsDir, "Harmony_Receipt_${safeCustomer}_$stamp.pdf")
+                pdfFile.outputStream().use { out ->
+                    PdfReceiptGenerator.generateReceipt(snapshot, decimals, out)
+                }
+                if (snapshot.deductStockOnGenerate) {
+                    deductOrderStock(snapshot)
+                }
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    pdfFile,
+                )
+            }.onSuccess { contentUri ->
+                withContext(Dispatchers.Main) {
+                    orderState.update { it.copy(isGeneratingPdf = false) }
+                    onUriReady(contentUri)
+                }
+            }.onFailure { error ->
+                withContext(Dispatchers.Main) {
+                    orderState.update { it.copy(isGeneratingPdf = false) }
+                }
+                _snackbarEvents.emit(
+                    InventorySnackbarEvent.Message("PDF failed: ${error.localizedMessage ?: "Unknown error"}")
+                )
+            }
+        }
+    }
+
+    private suspend fun deductOrderStock(snapshot: OrderFormState) {
+        snapshot.items.forEach { line ->
+            val productId = line.productId
+            if (productId != null) {
+                productRepository.deductStock(productId, line.quantity)
+            }
+        }
+    }
+
+    // --- Settings & CSV Backup ---
 
     fun onOpenSettings() {
         isSettingsOpen.value = true
@@ -329,3 +635,11 @@ class InventoryViewModel(
         return null
     }
 }
+
+private data class ModalAndTabHolder(
+    val tab: AppTab,
+    val form: ProductFormState?,
+    val order: OrderFormState,
+    val settingsOpen: Boolean,
+    val report: ImportReportState?,
+)

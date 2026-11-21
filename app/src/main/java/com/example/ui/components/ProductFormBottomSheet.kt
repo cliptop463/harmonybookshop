@@ -20,9 +20,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -39,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.AppSettings
+import com.example.data.ProductCategory
 import com.example.ui.theme.LocalMarginDeskColors
 import com.example.ui.theme.MonoMetricLarge
 import com.example.util.CurrencyFormatter
@@ -50,7 +58,7 @@ fun ProductFormBottomSheet(
     formState: ProductFormState,
     settings: AppSettings,
     onNameChange: (String) -> Unit,
-    onCodeChange: (String) -> Unit,
+    onCategoryChange: (ProductCategory) -> Unit,
     onQuantityChange: (String) -> Unit,
     onCostPriceChange: (String) -> Unit,
     onSellingPriceChange: (String) -> Unit,
@@ -59,6 +67,7 @@ fun ProductFormBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val semanticColors = LocalMarginDeskColors.current
+    var categoryExpanded by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -204,7 +213,7 @@ fun ProductFormBottomSheet(
                 value = formState.name,
                 onValueChange = onNameChange,
                 label = { Text("Product Name *") },
-                placeholder = { Text("e.g., Wireless Barcode Scanner") },
+                placeholder = { Text("e.g., 200-Page Exercise Book") },
                 isError = formState.nameError != null,
                 supportingText = formState.nameError?.let { error -> { Text(error) } },
                 singleLine = true,
@@ -223,22 +232,60 @@ fun ProductFormBottomSheet(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                OutlinedTextField(
-                    value = formState.skuOrCode,
-                    onValueChange = onCodeChange,
-                    label = { Text("SKU / Code (Optional)") },
-                    placeholder = { Text("POS-104") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                        imeAction = ImeAction.Next,
-                    ),
+                ExposedDropdownMenuBox(
+                    expanded = categoryExpanded,
+                    onExpandedChange = { categoryExpanded = !categoryExpanded },
                     modifier = Modifier
-                        .weight(1.2f)
-                        .testTag("form_code_input"),
-                )
+                        .weight(1.35f)
+                        .testTag("form_category_dropdown"),
+                ) {
+                    OutlinedTextField(
+                        value = formState.category.displayName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = formState.category.icon(),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded)
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = categoryExpanded,
+                        onDismissRequest = { categoryExpanded = false },
+                    ) {
+                        ProductCategory.entries.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.displayName) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = category.icon(),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                                onClick = {
+                                    onCategoryChange(category)
+                                    categoryExpanded = false
+                                },
+                                modifier = Modifier.testTag("category_option_${category.name.lowercase()}"),
+                            )
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = formState.quantityText,
@@ -253,7 +300,7 @@ fun ProductFormBottomSheet(
                         imeAction = ImeAction.Next,
                     ),
                     modifier = Modifier
-                        .weight(0.9f)
+                        .weight(0.85f)
                         .testTag("form_quantity_input"),
                 )
             }

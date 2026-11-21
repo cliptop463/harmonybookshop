@@ -14,10 +14,12 @@ data class Product(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
     val name: String,
-    val skuOrCode: String? = null,
+    val category: ProductCategory = ProductCategory.DEFAULT,
     val quantity: Int,
     val costPrice: Double,
     val sellingPrice: Double,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
 ) {
     /** Net profit per unit: sellingPrice - costPrice. */
     val profit: Double

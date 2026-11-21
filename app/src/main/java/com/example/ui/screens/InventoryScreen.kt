@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,12 +26,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -39,6 +45,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -60,35 +69,60 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.AppSettings
 import com.example.data.Product
+import com.example.data.ProductCategory
 import com.example.ui.components.CsvImportReportDialog
 import com.example.ui.components.ProductCardItem
 import com.example.ui.components.ProductFormBottomSheet
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.SummaryHeaderCard
 import com.example.ui.theme.LocalMarginDeskColors
+import com.example.viewmodel.AppTab
 import com.example.viewmodel.InventoryListState
 import com.example.viewmodel.InventoryUiState
+import com.example.viewmodel.SignatureStroke
 import com.example.viewmodel.SortOrder
 
 @Composable
 fun InventoryScreen(
     uiState: InventoryUiState,
     snackbarHostState: SnackbarHostState,
+    onTabSelected: (AppTab) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onClearSearch: () -> Unit,
     onSortOrderSelected: (SortOrder) -> Unit,
     onIncrementQuantity: (Product) -> Unit,
     onDecrementQuantity: (Product) -> Unit,
+    onAddProductToOrder: (Product, Boolean) -> Unit,
     onDeleteProduct: (Product) -> Unit,
     onOpenAddSheet: () -> Unit,
     onOpenEditSheet: (Product) -> Unit,
     onDismissSheet: () -> Unit,
     onFormNameChange: (String) -> Unit,
-    onFormCodeChange: (String) -> Unit,
+    onFormCategoryChange: (ProductCategory) -> Unit,
     onFormQuantityChange: (String) -> Unit,
     onFormCostPriceChange: (String) -> Unit,
     onFormSellingPriceChange: (String) -> Unit,
     onSubmitForm: () -> Unit,
+    onOrderCustomerNameChange: (String) -> Unit,
+    onOrderCustomerAddressChange: (String) -> Unit,
+    onOrderDateChange: (String) -> Unit,
+    onOpenCatalogPicker: () -> Unit,
+    onDismissCatalogPicker: () -> Unit,
+    onOpenCustomItemDialog: () -> Unit,
+    onDismissCustomItemDialog: () -> Unit,
+    onAddCustomOrderItem: (String, ProductCategory, Int, Double) -> Unit,
+    onIncrementOrderItemQty: (Long) -> Unit,
+    onDecrementOrderItemQty: (Long) -> Unit,
+    onRemoveOrderItem: (Long) -> Unit,
+    onUpdateOrderItemPrice: (Long, Double) -> Unit,
+    onAddDealerStroke: (SignatureStroke) -> Unit,
+    onClearDealerSignature: () -> Unit,
+    onAddCustomerStroke: (SignatureStroke) -> Unit,
+    onClearCustomerSignature: () -> Unit,
+    onToggleDeductStock: (Boolean) -> Unit,
+    onClearOrder: () -> Unit,
+    onSaveOrderPdfClick: () -> Unit,
+    onShareOrderPdfClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismissSettings: () -> Unit,
     onSaveSettings: (AppSettings) -> Unit,
@@ -99,207 +133,312 @@ fun InventoryScreen(
     val semanticColors = LocalMarginDeskColors.current
     val focusManager = LocalFocusManager.current
 
+    BackHandler(enabled = uiState.activeTab != AppTab.CATALOG) {
+        onTabSelected(AppTab.CATALOG)
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onOpenAddSheet,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("add_product_fab"),
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.dp,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = stringResource(R.string.add_product_cd),
+                NavigationBarItem(
+                    selected = uiState.activeTab == AppTab.CATALOG,
+                    onClick = { onTabSelected(AppTab.CATALOG) },
+                    icon = {
+                        Icon(
+                            imageVector = if (uiState.activeTab == AppTab.CATALOG) {
+                                Icons.Rounded.Inventory2
+                            } else {
+                                Icons.Outlined.Inventory2
+                            },
+                            contentDescription = "Catalog",
+                        )
+                    },
+                    label = { Text(AppTab.CATALOG.label) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                    modifier = Modifier.testTag("nav_tab_catalog"),
+                )
+
+                val orderCount = uiState.orderState.totalUnits
+                NavigationBarItem(
+                    selected = uiState.activeTab == AppTab.ORDER,
+                    onClick = { onTabSelected(AppTab.ORDER) },
+                    icon = {
+                        BadgedBox(
+                            badge = {
+                                if (orderCount > 0) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ) {
+                                        Text(orderCount.toString())
+                                    }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.activeTab == AppTab.ORDER) {
+                                    Icons.Rounded.ReceiptLong
+                                } else {
+                                    Icons.Outlined.ReceiptLong
+                                },
+                                contentDescription = "Order & Receipt",
+                            )
+                        }
+                    },
+                    label = { Text(AppTab.ORDER.label) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                    modifier = Modifier.testTag("nav_tab_order"),
                 )
             }
         },
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 680.dp)
-                    .padding(horizontal = 16.dp),
-            ) {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Prominent Search Bar at the very top + Settings action
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+        floatingActionButton = {
+            if (uiState.activeTab == AppTab.CATALOG) {
+                FloatingActionButton(
+                    onClick = onOpenAddSheet,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.testTag("add_product_fab"),
                 ) {
-                    OutlinedTextField(
-                        value = uiState.searchQuery,
-                        onValueChange = onSearchQueryChange,
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.search_placeholder),
-                                maxLines = 1,
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.add_product_cd),
+                    )
+                }
+            }
+        },
+    ) { innerPadding ->
+        when (uiState.activeTab) {
+            AppTab.CATALOG -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .widthIn(max = 680.dp)
+                            .padding(horizontal = 16.dp),
+                    ) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Prominent Search Bar at the very top + Settings action
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = uiState.searchQuery,
+                                onValueChange = onSearchQueryChange,
+                                placeholder = {
+                                    Text(
+                                        text = stringResource(R.string.search_placeholder),
+                                        maxLines = 1,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (uiState.searchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = onClearSearch,
+                                            modifier = Modifier.testTag("clear_search_button"),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Close,
+                                                contentDescription = stringResource(R.string.clear_search_cd),
+                                            )
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = semanticColors.cardBorder.copy(alpha = 0.7f),
+                                ),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("search_bar_input"),
                             )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        trailingIcon = {
-                            if (uiState.searchQuery.isNotEmpty()) {
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, semanticColors.cardBorder.copy(alpha = 0.7f)),
+                            ) {
                                 IconButton(
-                                    onClick = onClearSearch,
-                                    modifier = Modifier.testTag("clear_search_button"),
+                                    onClick = onOpenSettings,
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .size(52.dp)
+                                        .testTag("settings_button"),
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.clear_search_cd),
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = stringResource(R.string.settings_cd),
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                             }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = semanticColors.cardBorder.copy(alpha = 0.7f),
-                        ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("search_bar_input"),
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, semanticColors.cardBorder.copy(alpha = 0.7f)),
-                    ) {
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .size(52.dp)
-                                .testTag("settings_button"),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = stringResource(R.string.settings_cd),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
                         }
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                SummaryHeaderCard(
-                    summary = uiState.summary,
-                    settings = uiState.settings,
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Sort chips row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SortOrder.entries.forEach { order ->
-                        val selected = uiState.sortOrder == order
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onSortOrderSelected(order) },
-                            label = { Text(order.label) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = selected,
-                                borderColor = semanticColors.cardBorder.copy(alpha = 0.7f),
-                                selectedBorderColor = MaterialTheme.colorScheme.primary,
-                            ),
-                            modifier = Modifier.testTag("sort_chip_${order.name.lowercase()}"),
+                        SummaryHeaderCard(
+                            summary = uiState.summary,
+                            settings = uiState.settings,
                         )
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                when (val listState = uiState.listState) {
-                    is InventoryListState.Loading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
+                        // Sort chips row (Last modified, Last added, Name, Low stock, Highest margin)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            CircularProgressIndicator()
+                            SortOrder.entries.forEach { order ->
+                                val selected = uiState.sortOrder == order
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSortOrderSelected(order) },
+                                    label = { Text(order.label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = selected,
+                                        borderColor = semanticColors.cardBorder.copy(alpha = 0.7f),
+                                        selectedBorderColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                    modifier = Modifier.testTag("sort_chip_${order.name.lowercase()}"),
+                                )
+                            }
                         }
-                    }
 
-                    is InventoryListState.Ready -> {
-                        when {
-                            listState.totalCatalogCount == 0 -> {
-                                EmptyCatalogState(
-                                    onAddFirstItem = onOpenAddSheet,
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        when (val listState = uiState.listState) {
+                            is InventoryListState.Loading -> {
+                                Box(
                                     modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-
-                            listState.items.isEmpty() -> {
-                                EmptySearchState(
-                                    query = uiState.searchQuery,
-                                    onClearSearch = onClearSearch,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-
-                            else -> {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .testTag("product_list"),
-                                    contentPadding = PaddingValues(top = 4.dp, bottom = 92.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    items(
-                                        items = listState.items,
-                                        key = { it.id },
-                                    ) { product ->
-                                        ProductCardItem(
-                                            product = product,
-                                            settings = uiState.settings,
-                                            onCardClick = onOpenEditSheet,
-                                            onIncrement = onIncrementQuantity,
-                                            onDecrement = onDecrementQuantity,
-                                            onDelete = onDeleteProduct,
-                                            modifier = Modifier.animateItem(),
+                                    CircularProgressIndicator()
+                                }
+                            }
+
+                            is InventoryListState.Ready -> {
+                                when {
+                                    listState.totalCatalogCount == 0 -> {
+                                        EmptyCatalogState(
+                                            onAddFirstItem = onOpenAddSheet,
+                                            modifier = Modifier.fillMaxSize(),
                                         )
+                                    }
+
+                                    listState.items.isEmpty() -> {
+                                        EmptySearchState(
+                                            query = uiState.searchQuery,
+                                            onClearSearch = onClearSearch,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
+
+                                    else -> {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .testTag("product_list"),
+                                            contentPadding = PaddingValues(top = 4.dp, bottom = 92.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            items(
+                                                items = listState.items,
+                                                key = { it.id },
+                                            ) { product ->
+                                                ProductCardItem(
+                                                    product = product,
+                                                    settings = uiState.settings,
+                                                    onCardClick = onOpenEditSheet,
+                                                    onIncrement = onIncrementQuantity,
+                                                    onDecrement = onDecrementQuantity,
+                                                    onAddToOrder = { prod -> onAddProductToOrder(prod, false) },
+                                                    onDelete = onDeleteProduct,
+                                                    modifier = Modifier.animateItem(),
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            AppTab.ORDER -> {
+                OrderReceiptScreen(
+                    orderState = uiState.orderState,
+                    catalogProducts = uiState.allCatalogProducts,
+                    settings = uiState.settings,
+                    onCustomerNameChange = onOrderCustomerNameChange,
+                    onCustomerAddressChange = onOrderCustomerAddressChange,
+                    onOrderDateChange = onOrderDateChange,
+                    onOpenCatalogPicker = onOpenCatalogPicker,
+                    onDismissCatalogPicker = onDismissCatalogPicker,
+                    onOpenCustomItemDialog = onOpenCustomItemDialog,
+                    onDismissCustomItemDialog = onDismissCustomItemDialog,
+                    onAddProductToOrder = { prod -> onAddProductToOrder(prod, true) },
+                    onAddCustomItem = onAddCustomOrderItem,
+                    onIncrementItemQty = onIncrementOrderItemQty,
+                    onDecrementItemQty = onDecrementOrderItemQty,
+                    onRemoveItem = onRemoveOrderItem,
+                    onUpdateItemPrice = onUpdateOrderItemPrice,
+                    onAddDealerStroke = onAddDealerStroke,
+                    onClearDealerSignature = onClearDealerSignature,
+                    onAddCustomerStroke = onAddCustomerStroke,
+                    onClearCustomerSignature = onClearCustomerSignature,
+                    onToggleDeductStock = onToggleDeductStock,
+                    onClearOrder = onClearOrder,
+                    onSavePdfClick = onSaveOrderPdfClick,
+                    onSharePdfClick = onShareOrderPdfClick,
+                    modifier = Modifier.padding(innerPadding),
+                )
             }
         }
     }
@@ -309,7 +448,7 @@ fun InventoryScreen(
             formState = form,
             settings = uiState.settings,
             onNameChange = onFormNameChange,
-            onCodeChange = onFormCodeChange,
+            onCategoryChange = onFormCategoryChange,
             onQuantityChange = onFormQuantityChange,
             onCostPriceChange = onFormCostPriceChange,
             onSellingPriceChange = onFormSellingPriceChange,

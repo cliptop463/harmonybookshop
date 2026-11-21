@@ -23,7 +23,7 @@ private val Context.settingsDataStore: DataStore<Preferences> by preferencesData
  * User-configurable display and inventory threshold preferences.
  */
 data class AppSettings(
-    val currencySymbol: String = "$",
+    val currencySymbol: String = "XAF",
     val decimalPlaces: Int = 0,
     val lowStockThreshold: Int = 5,
     val dynamicColor: Boolean = false,
@@ -52,7 +52,7 @@ class SettingsDataStore(private val context: Context) {
         }
         .map { prefs ->
             AppSettings(
-                currencySymbol = prefs[Keys.CURRENCY_SYMBOL]?.takeIf { it.isNotBlank() } ?: "$",
+                currencySymbol = prefs[Keys.CURRENCY_SYMBOL]?.takeIf { it.isNotBlank() } ?: "XAF",
                 decimalPlaces = (prefs[Keys.DECIMAL_PLACES] ?: 0).coerceIn(0, 4),
                 lowStockThreshold = (prefs[Keys.LOW_STOCK_THRESHOLD] ?: 5).coerceAtLeast(0),
                 dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: false,
@@ -74,7 +74,7 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun updateSettings(settings: AppSettings) {
         context.settingsDataStore.edit { prefs ->
-            prefs[Keys.CURRENCY_SYMBOL] = settings.currencySymbol.trim().ifEmpty { "$" }
+            prefs[Keys.CURRENCY_SYMBOL] = settings.currencySymbol.trim().ifEmpty { "XAF" }
             prefs[Keys.DECIMAL_PLACES] = settings.decimalPlaces.coerceIn(0, 4)
             prefs[Keys.LOW_STOCK_THRESHOLD] = settings.lowStockThreshold.coerceAtLeast(0)
             prefs[Keys.DYNAMIC_COLOR] = settings.dynamicColor

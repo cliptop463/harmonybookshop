@@ -2,12 +2,22 @@ package com.example.viewmodel
 
 import com.example.data.AppSettings
 import com.example.data.Product
+import com.example.data.ProductCategory
 import com.example.util.CsvSkippedRow
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 enum class SortOrder(val label: String) {
+    LAST_MODIFIED("Last modified"),
+    LAST_ADDED("Last added"),
     NAME("Name"),
     LOW_STOCK("Low stock"),
     HIGHEST_MARGIN("Highest margin"),
+}
+
+enum class AppTab(val label: String) {
+    CATALOG("Catalog"),
+    ORDER("Order & Receipt"),
 }
 
 data class InventorySummary(
@@ -23,7 +33,7 @@ data class InventorySummary(
 data class ProductFormState(
     val editingProductId: Long? = null,
     val name: String = "",
-    val skuOrCode: String = "",
+    val category: ProductCategory = ProductCategory.DEFAULT,
     val quantityText: String = "1",
     val costPriceText: String = "",
     val sellingPriceText: String = "",
@@ -67,6 +77,52 @@ data class ProductFormState(
         }
 }
 
+/**
+ * Normalized stroke point (0f..1f) so touch-drawn signatures scale cleanly between UI pads and A4 PDFs.
+ */
+data class NormalizedPoint(
+    val x: Float,
+    val y: Float,
+)
+
+data class SignatureStroke(
+    val points: List<NormalizedPoint>,
+)
+
+data class OrderLineItem(
+    val lineId: Long,
+    val productId: Long? = null,
+    val name: String,
+    val category: ProductCategory = ProductCategory.DEFAULT,
+    val quantity: Int = 1,
+    val unitPriceXaf: Double,
+    val maxAvailableStock: Int? = null,
+) {
+    val lineTotalXaf: Double
+        get() = quantity * unitPriceXaf
+}
+
+data class OrderFormState(
+    val customerName: String = "",
+    val customerAddress: String = "",
+    val orderDate: String = LocalDate.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy")),
+    val items: List<OrderLineItem> = emptyList(),
+    val dealerStrokes: List<SignatureStroke> = emptyList(),
+    val customerStrokes: List<SignatureStroke> = emptyList(),
+    val deductStockOnGenerate: Boolean = false,
+    val customerNameError: String? = null,
+    val itemsError: String? = null,
+    val isCatalogPickerOpen: Boolean = false,
+    val isCustomItemDialogOpen: Boolean = false,
+    val isGeneratingPdf: Boolean = false,
+) {
+    val totalXaf: Double
+        get() = items.sumOf { it.lineTotalXaf }
+
+    val totalUnits: Int
+        get() = items.sumOf { it.quantity }
+}
+
 data class ImportReportState(
     val importedCount: Int,
     val skippedRows: List<CsvSkippedRow>,
@@ -83,12 +139,15 @@ sealed interface InventoryListState {
 }
 
 data class InventoryUiState(
+    val activeTab: AppTab = AppTab.CATALOG,
     val listState: InventoryListState = InventoryListState.Loading,
+    val allCatalogProducts: List<Product> = emptyList(),
     val summary: InventorySummary = InventorySummary(),
     val searchQuery: String = "",
-    val sortOrder: SortOrder = SortOrder.NAME,
+    val sortOrder: SortOrder = SortOrder.LAST_MODIFIED,
     val settings: AppSettings = AppSettings(),
     val formState: ProductFormState? = null,
+    val orderState: OrderFormState = OrderFormState(),
     val isSettingsOpen: Boolean = false,
     val importReport: ImportReportState? = null,
 )

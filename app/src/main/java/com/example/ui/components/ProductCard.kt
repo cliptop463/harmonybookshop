@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,15 +24,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddShoppingCart
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,6 +73,7 @@ fun ProductCardItem(
     onCardClick: (Product) -> Unit,
     onIncrement: (Product) -> Unit,
     onDecrement: (Product) -> Unit,
+    onAddToOrder: (Product) -> Unit,
     onDelete: (Product) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -190,20 +196,30 @@ fun ProductCardItem(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            if (!product.skuOrCode.isNullOrBlank()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = semanticColors.surfaceElevated,
-                                    border = BorderStroke(
-                                        1.dp,
-                                        semanticColors.cardBorder.copy(alpha = 0.7f),
-                                    ),
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = semanticColors.surfaceElevated,
+                                border = BorderStroke(
+                                    1.dp,
+                                    semanticColors.cardBorder.copy(alpha = 0.7f),
+                                ),
+                                modifier = Modifier.testTag("category_badge_${product.id}"),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
+                                    Icon(
+                                        imageVector = product.category.icon(),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(12.dp),
+                                    )
                                     Text(
-                                        text = product.skuOrCode,
-                                        style = MonoCodeBadge,
+                                        text = product.category.displayName,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     )
                                 }
                             }
@@ -299,8 +315,9 @@ fun ProductCardItem(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
                     ) {
                         PriceLabelColumn(
                             label = "COST",
@@ -322,81 +339,109 @@ fun ProductCardItem(
                         )
                     }
 
-                    // Inline Stock +/- Stepper
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = semanticColors.surfaceElevated,
-                        border = BorderStroke(1.dp, semanticColors.cardBorder.copy(alpha = 0.7f)),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            modifier = Modifier.padding(horizontal = 2.dp),
+                        FilledTonalButton(
+                            onClick = { onAddToOrder(product) },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("add_to_order_${product.id}"),
                         ) {
-                            IconButton(
-                                onClick = { onDecrement(product) },
-                                enabled = product.quantity > 0,
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.onSurface,
-                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                        alpha = 0.32f,
+                            Icon(
+                                imageVector = Icons.Rounded.AddShoppingCart,
+                                contentDescription = "Add ${product.name} to order",
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Order",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+
+                        // Inline Stock +/- Stepper
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = semanticColors.surfaceElevated,
+                            border = BorderStroke(1.dp, semanticColors.cardBorder.copy(alpha = 0.7f)),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                            ) {
+                                IconButton(
+                                    onClick = { onDecrement(product) },
+                                    enabled = product.quantity > 0,
+                                    colors = IconButtonDefaults.iconButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = 0.32f,
+                                        ),
                                     ),
-                                ),
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .testTag("decrement_qty_${product.id}"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Remove,
-                                    contentDescription = "Decrease stock for ${product.name}",
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .testTag("decrement_qty_${product.id}"),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Remove,
+                                        contentDescription = "Decrease stock for ${product.name}",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
 
-                            AnimatedContent(
-                                targetState = product.quantity,
-                                transitionSpec = {
-                                    if (targetState > initialState) {
-                                        (slideInVertically { -it / 2 } + fadeIn()) togetherWith
-                                            (slideOutVertically { it / 2 } + fadeOut())
-                                    } else {
-                                        (slideInVertically { it / 2 } + fadeIn()) togetherWith
-                                            (slideOutVertically { -it / 2 } + fadeOut())
-                                    }
-                                },
-                                label = "qty_counter_anim",
-                            ) { qty ->
-                                Text(
-                                    text = qty.toString(),
-                                    style = MonoMetricMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (qty <= settings.lowStockThreshold) {
-                                        semanticColors.lowStockContent
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
+                                AnimatedContent(
+                                    targetState = product.quantity,
+                                    transitionSpec = {
+                                        if (targetState > initialState) {
+                                            (slideInVertically { -it / 2 } + fadeIn()) togetherWith
+                                                (slideOutVertically { it / 2 } + fadeOut())
+                                        } else {
+                                            (slideInVertically { it / 2 } + fadeIn()) togetherWith
+                                                (slideOutVertically { -it / 2 } + fadeOut())
+                                        }
                                     },
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.widthIn(min = 28.dp),
-                                )
-                            }
+                                    label = "qty_counter_anim",
+                                ) { qty ->
+                                    Text(
+                                        text = qty.toString(),
+                                        style = MonoMetricMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = if (qty <= settings.lowStockThreshold) {
+                                            semanticColors.lowStockContent
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.widthIn(min = 24.dp),
+                                    )
+                                }
 
-                            IconButton(
-                                onClick = { onIncrement(product) },
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.primary,
-                                ),
-                                modifier = Modifier
-                                    .minimumInteractiveComponentSize()
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .testTag("increment_qty_${product.id}"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Increase stock for ${product.name}",
-                                    modifier = Modifier.size(18.dp),
-                                )
+                                IconButton(
+                                    onClick = { onIncrement(product) },
+                                    colors = IconButtonDefaults.iconButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .testTag("increment_qty_${product.id}"),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Add,
+                                        contentDescription = "Increase stock for ${product.name}",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -427,6 +472,8 @@ private fun PriceLabelColumn(
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

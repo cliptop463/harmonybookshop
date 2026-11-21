@@ -24,7 +24,7 @@ class ProductRepository(
         productDao.searchProducts(query.trim())
 
     /**
-     * Seeds 8 realistic sample products once on the very first app launch.
+     * Seeds sample bookshop products once on the very first app launch.
      * Protected by a Mutex and DataStore flag so deleting all items later never re-seeds them.
      */
     suspend fun seedInitialProductsIfNeeded() {
@@ -38,10 +38,22 @@ class ProductRepository(
     }
 
     suspend fun saveProduct(product: Product) {
+        val now = System.currentTimeMillis()
         if (product.id == 0L) {
-            productDao.insertProduct(product)
+            productDao.insertProduct(
+                product.copy(
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            )
         } else {
-            productDao.updateProduct(product)
+            val existing = productDao.getProductById(product.id)
+            productDao.updateProduct(
+                product.copy(
+                    createdAt = existing?.createdAt ?: product.createdAt,
+                    updatedAt = now,
+                )
+            )
         }
     }
 
@@ -51,6 +63,11 @@ class ProductRepository(
 
     suspend fun decrementQuantity(productId: Long) {
         productDao.adjustQuantity(productId, delta = -1)
+    }
+
+    suspend fun deductStock(productId: Long, quantitySold: Int) {
+        if (quantitySold <= 0) return
+        productDao.adjustQuantity(productId, delta = -quantitySold)
     }
 
     suspend fun deleteProduct(product: Product) {

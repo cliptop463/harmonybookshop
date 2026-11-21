@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,6 +53,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val exportPdfLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument("application/pdf"),
+            ) { uri ->
+                if (uri != null) {
+                    viewModel.onSaveOrderPdf(context.contentResolver, uri)
+                }
+            }
+
             LaunchedEffect(Unit) {
                 viewModel.snackbarEvents.collect { event ->
                     snackbarHostState.currentSnackbarData?.dismiss()
@@ -82,26 +91,78 @@ class MainActivity : ComponentActivity() {
                 InventoryScreen(
                     uiState = uiState,
                     snackbarHostState = snackbarHostState,
+                    onTabSelected = viewModel::onTabSelected,
                     onSearchQueryChange = viewModel::onSearchQueryChange,
                     onClearSearch = viewModel::onClearSearch,
                     onSortOrderSelected = viewModel::onSortOrderSelected,
                     onIncrementQuantity = viewModel::onIncrementQuantity,
                     onDecrementQuantity = viewModel::onDecrementQuantity,
+                    onAddProductToOrder = viewModel::onAddProductToOrder,
                     onDeleteProduct = viewModel::onDeleteProduct,
                     onOpenAddSheet = viewModel::onOpenAddSheet,
                     onOpenEditSheet = viewModel::onOpenEditSheet,
                     onDismissSheet = viewModel::onDismissSheet,
                     onFormNameChange = viewModel::onFormNameChange,
-                    onFormCodeChange = viewModel::onFormCodeChange,
+                    onFormCategoryChange = viewModel::onFormCategoryChange,
                     onFormQuantityChange = viewModel::onFormQuantityChange,
                     onFormCostPriceChange = viewModel::onFormCostPriceChange,
                     onFormSellingPriceChange = viewModel::onFormSellingPriceChange,
                     onSubmitForm = viewModel::onSubmitForm,
+                    onOrderCustomerNameChange = viewModel::onOrderCustomerNameChange,
+                    onOrderCustomerAddressChange = viewModel::onOrderCustomerAddressChange,
+                    onOrderDateChange = viewModel::onOrderDateChange,
+                    onOpenCatalogPicker = viewModel::onOpenCatalogPicker,
+                    onDismissCatalogPicker = viewModel::onDismissCatalogPicker,
+                    onOpenCustomItemDialog = viewModel::onOpenCustomItemDialog,
+                    onDismissCustomItemDialog = viewModel::onDismissCustomItemDialog,
+                    onAddCustomOrderItem = viewModel::onAddCustomItemToOrder,
+                    onIncrementOrderItemQty = viewModel::onIncrementOrderItemQty,
+                    onDecrementOrderItemQty = viewModel::onDecrementOrderItemQty,
+                    onRemoveOrderItem = viewModel::onRemoveOrderItem,
+                    onUpdateOrderItemPrice = viewModel::onUpdateOrderItemPrice,
+                    onAddDealerStroke = viewModel::onAddDealerStroke,
+                    onClearDealerSignature = viewModel::onClearDealerSignature,
+                    onAddCustomerStroke = viewModel::onAddCustomerStroke,
+                    onClearCustomerSignature = viewModel::onClearCustomerSignature,
+                    onToggleDeductStock = viewModel::onToggleDeductStock,
+                    onClearOrder = viewModel::onClearOrder,
+                    onSaveOrderPdfClick = {
+                        if (viewModel.validateOrderForReceipt()) {
+                            val safeName = uiState.orderState.customerName.trim()
+                                .replace(Regex("[^A-Za-z0-9_-]"), "_")
+                                .take(24)
+                                .ifEmpty { "customer" }
+                            val fileName = "Harmony_Receipt_${safeName}_${LocalDate.now()}.pdf"
+                            exportPdfLauncher.launch(fileName)
+                        }
+                    },
+                    onShareOrderPdfClick = {
+                        viewModel.onGenerateShareablePdf(context) { pdfUri ->
+                            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(pdfUri, "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/pdf"
+                                putExtra(Intent.EXTRA_STREAM, pdfUri)
+                                putExtra(
+                                    Intent.EXTRA_SUBJECT,
+                                    "Harmony Bookshop Receipt - ${uiState.orderState.customerName.trim()}",
+                                )
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            if (viewIntent.resolveActivity(context.packageManager) != null) {
+                                context.startActivity(Intent.createChooser(viewIntent, "Open or Share Receipt PDF"))
+                            } else {
+                                context.startActivity(Intent.createChooser(sendIntent, "Share Receipt PDF"))
+                            }
+                        }
+                    },
                     onOpenSettings = viewModel::onOpenSettings,
                     onDismissSettings = viewModel::onDismissSettings,
                     onSaveSettings = viewModel::onSaveSettings,
                     onExportCsvClick = {
-                        val fileName = "margindesk_catalog_${LocalDate.now()}.csv"
+                        val fileName = "harmony_bookshop_catalog_${LocalDate.now()}.csv"
                         exportCsvLauncher.launch(fileName)
                     },
                     onImportCsvClick = {

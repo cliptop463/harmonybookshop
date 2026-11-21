@@ -45,7 +45,7 @@ import com.example.data.AppSettings
 import com.example.ui.theme.LocalMarginDeskColors
 import com.example.viewmodel.ImportReportState
 
-private val CurrencyPresets = listOf("$", "€", "£", "XAF", "₦", "¥")
+private val CurrencyPresets = listOf("XAF", "$", "€", "£", "₦", "¥")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -242,7 +242,7 @@ fun SettingsDialog(
                     }
                     onSave(
                         AppSettings(
-                            currencySymbol = currencyInput.trim().ifEmpty { "$" },
+                            currencySymbol = currencyInput.trim().ifEmpty { "XAF" },
                             decimalPlaces = decimalPlaces,
                             lowStockThreshold = threshold,
                             dynamicColor = dynamicColor,
